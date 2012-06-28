@@ -15,9 +15,15 @@ int main(int argc, char *argv[]) {
   char * snapPath = "/home/markus/potentials/density/";
 
   /* number of refinement levels */
-  int refLevels = 4;
+  int refLevels = 5;
   int res = 128;
-
+  float boxSize = 20000;
+  float level[5][2] = { {0.00000,1.00000}, 
+			{0.25000,0.75000},
+			{0.37500,0.62500},
+			{0.43750,0.56250},
+			{0.46875,0.53125} };
+ 
   FILE * fp = fopen(filename,"r");
   if (fp == NULL) {
     printf("Could not open %s\n",filename);
@@ -66,76 +72,106 @@ int main(int argc, char *argv[]) {
   }
 
   char snapName[BUF];
-  int startNumber=10;
   for(i=0;i<nFiles;i++) {
     for(j=0;j<refLevels;j++) {
       snapFile[i][j][0] = '\0';
-      sprintf(snapName,"dmDensity_lev%i_%03i.a_den",j,i+startNumber);
+      sprintf(snapName,"dmDensity_lev%i_%03i.a_den",j,i);
       strcat(snapFile[i][j],snapPath);
       strcat(snapFile[i][j],snapName);
     }
   }
   /* print the snapshot file names */
-  printf(" The Following snapshot files will be used:\n");
-  for(i=0;i<nFiles;i++) {
-    for(j=0;j<refLevels;j++) {
-      printf(" %s\n",snapFile[i][j]);
-    }
-  }
+  /* printf(" The Following snapshot files will be used:\n"); */
+  /* for(i=0;i<nFiles;i++) { */
+  /*   for(j=0;j<refLevels;j++) { */
+  /*     printf(" %s\n",snapFile[i][j]); */
+  /*   } */
+  /* } */
 
   /* make the hdf5 file */
   hid_t file_id;
+  hid_t group_id;
+  hid_t dspace_id;
+  hid_t a_id;
+  hid_t dset_id;
+  hsize_t length = nFiles;
+  hsize_t dim[3] = {res,res,res};
+  hsize_t two = 2;
+  char groupName[BUF];
+
   filename="./density.hdf5";
   file_id = H5Fcreate(filename , H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
   /* create group */
-  hid_t group_id;
   group_id = H5Gcreate(file_id, "/Time", H5P_DEFAULT);
-  /* creating attributes */
-  /* number of output timesteps */
-  hid_t dspace_id;
-  hid_t a_id;
+  /* creating attribute number of timesteps */
   dspace_id = H5Screate(H5S_SCALAR);
-  a_id = H5Acreate(group_id,"nTimeSteps", H5T_STD_U32LE,
+  a_id = H5Acreate(file_id,"nTimeSteps", H5T_STD_U32LE,
   			   dspace_id,H5P_DEFAULT);
   H5Awrite(a_id, H5T_STD_U32LE, &nFiles);
   H5Aclose(a_id);
+  a_id = H5Acreate(file_id,"Boxsize in kpc/h", H5T_IEEE_F32LE,
+  			   dspace_id,H5P_DEFAULT);
+  H5Awrite(a_id, H5T_NATIVE_FLOAT, &boxSize);
+  H5Aclose(a_id);
+  dspace_id = H5Screate_simple(1, &two,NULL);
+  for(i=0;i<refLevels;i++) {
+    sprintf(groupName,"Extent Level %i",i);
+    a_id = H5Acreate(file_id,groupName, H5T_IEEE_F32LE,
+		     dspace_id,H5P_DEFAULT);
+    H5Awrite(a_id, H5T_NATIVE_FLOAT, &level[i][0]);
+    H5Aclose(a_id);
+  }
+  H5Sclose(dspace_id);
 
-  hsize_t length = nFiles;
   /* specify the dimensions of the dataset */
   dspace_id = H5Screate_simple(1,&length,NULL);
   /* create the dataset */
-  hid_t dset_id;
   dset_id = H5Dcreate(group_id,"scaleFactor",H5T_IEEE_F64LE,dspace_id, H5P_DEFAULT);
-  hsize_t offset = 0;
-  hsize_t count = 1;
-  hid_t memspace_id = H5Screate(H5S_SCALAR);
-  for(i=0; i<nFiles; i++) {
-    H5Sselect_hyperslab(dspace_id,H5S_SELECT_SET,&offset,NULL,&count,NULL);
-    H5Dwrite(dset_id, H5T_NATIVE_DOUBLE, memspace_id, dspace_id, H5P_DEFAULT, &snapshotTime[i]);
-    offset += 1;
-  }
-  H5Sclose(memspace_id);
+  H5Dwrite(dset_id, H5T_NATIVE_DOUBLE, dspace_id, dspace_id, H5P_DEFAULT, &snapshotTime[0]);
+  H5Sclose(dspace_id);
   H5Dclose(dset_id);
   H5Gclose(group_id);
   H5Fclose(file_id);
 
 
-
-
   /* load data */
   float *dens;
   dens = malloc(res*res*res*sizeof(float));
-  /* open file */
-  fp = fopen(snapFile[0][0],"r");
-  if (fp == NULL) {
-    printf("Could not open %s\n",filename);
-    return -1;
+
+  /* loop over the files we want to write into the hdf5 file */
+  printf(" --------- writing data into hdf file --------- \n");
+  file_id = H5Fopen(filename,H5F_ACC_RDWR,H5P_DEFAULT);
+  group_id = H5Gcreate(file_id,"/Density",H5P_DEFAULT);
+  H5Gclose(group_id);
+
+  char dsetName[BUF];
+  for(i=0;i<nFiles;i++) {
+
+    sprintf(groupName,"/Density/T=%03i",i);
+    printf("groupName: %s\n",groupName);
+    group_id = H5Gcreate(file_id,groupName,H5P_DEFAULT);
+
+    for(j=0;j<refLevels;j++) {
+      printf(" %s\n",snapFile[i][j]);
+      /* open file */
+      fp = fopen(snapFile[i][j],"r");
+      if (fp == NULL) {
+	printf("Could not open %s\n",snapFile[i][j]);
+	return -1;
+      }
+      fread(dens,sizeof(float),res*res*res,fp);
+      fclose(fp);
+      /* write the data into the hdf5 file */
+      dspace_id = H5Screate_simple(3, dim, dim);
+      sprintf(dsetName,"density%03i_level%i",i,j);
+      printf("dsetName: %s\n",dsetName);
+      dset_id = H5Dcreate(group_id,dsetName,H5T_IEEE_F32LE,dspace_id,H5P_DEFAULT);
+      H5Dwrite(dset_id, H5T_NATIVE_FLOAT, dspace_id, dspace_id, H5P_DEFAULT, &dens[0]);
+      H5Dclose(dset_id);
+    }
+    H5Gclose(group_id);
   }
-  fread(dens,sizeof(float),res*res*res,fp);
-
-
-  fclose(fp);
-
+  H5Fclose(file_id);
   /* free the density array */
   free(dens);
 

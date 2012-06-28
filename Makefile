@@ -1,6 +1,7 @@
 
 CC = gcc
-CFLAGS= -DH5_USE_16_API
+#CFLAGS= -DH5_USE_16_API
+CFLAGS=
 
 OBJECTS = main.o
 TARGET = main
