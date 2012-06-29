@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <hdf5.h>
+#include <math.h>
 
 #define BUF 400
 
@@ -23,6 +24,14 @@ int main(int argc, char *argv[]) {
 			{0.37500,0.62500},
 			{0.43750,0.56250},
 			{0.46875,0.53125} };
+
+  double Mpc_si = 3.08568025E22;
+  double Msol_si = 1.98892E30;
+  double H_si = 70.*1E3/Mpc_si;
+  double G_si = 6.67384E-11;
+  double rhoc_si = 3*H_si*H_si/(8.*3.14*G_si);
+  double conversionFactor = 1E10*Msol_si/0.7/pow(Mpc_si/0.7,3)/rhoc_si;
+  float cFactor = (float)conversionFactor;
  
   FILE * fp = fopen(filename,"r");
   if (fp == NULL) {
@@ -113,6 +122,10 @@ int main(int argc, char *argv[]) {
   			   dspace_id,H5P_DEFAULT);
   H5Awrite(a_id, H5T_NATIVE_FLOAT, &boxSize);
   H5Aclose(a_id);
+  a_id = H5Acreate(file_id,"Density Unit is given in units of critical density (in SI)", H5T_IEEE_F64LE,
+  			   dspace_id,H5P_DEFAULT);
+  H5Awrite(a_id, H5T_NATIVE_DOUBLE, &rhoc_si);
+  H5Aclose(a_id);
   dspace_id = H5Screate_simple(1, &two,NULL);
   for(i=0;i<refLevels;i++) {
     sprintf(groupName,"Extent Level %i",i);
@@ -138,12 +151,14 @@ int main(int argc, char *argv[]) {
   float *dens;
   dens = malloc(res*res*res*sizeof(float));
 
+
+
   /* loop over the files we want to write into the hdf5 file */
   printf(" --------- writing data into hdf file --------- \n");
   file_id = H5Fopen(filename,H5F_ACC_RDWR,H5P_DEFAULT);
   group_id = H5Gcreate(file_id,"/Density",H5P_DEFAULT);
   H5Gclose(group_id);
-
+  int k;
   char dsetName[BUF];
   for(i=0;i<nFiles;i++) {
 
@@ -161,6 +176,12 @@ int main(int argc, char *argv[]) {
       }
       fread(dens,sizeof(float),res*res*res,fp);
       fclose(fp);
+
+      /* convert the density to units in rhoc */
+      for(k=0; k<res*res*res; k++) {
+	dens[k]*=cFactor;
+      }
+
       /* write the data into the hdf5 file */
       dspace_id = H5Screate_simple(3, dim, dim);
       sprintf(dsetName,"density%03i_level%i",i,j);
